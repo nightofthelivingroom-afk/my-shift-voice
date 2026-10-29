@@ -39,5 +39,45 @@ render = function () {
   });
 };
 
+// 予定の追加・削除後にも備考欄を表示する
+const originalRenderFunction = originalRender;
+
+render = function () {
+  originalRenderFunction();
+
+  const rows = document.querySelectorAll("#items .item");
+  const sorted = entries.slice().sort((a, b) =>
+    a.date.localeCompare(b.date)
+  );
+
+  rows.forEach((row, i) => {
+    const entry = sorted[i];
+    if (!entry) return;
+
+    const label = document.createElement("label");
+    label.textContent = "備考";
+
+    const note = document.createElement("textarea");
+    note.className = "field";
+    note.rows = 3;
+    note.placeholder = "備考を入力";
+    note.value = entry.note || "";
+
+    const status = document.createElement("small");
+
+    note.addEventListener("input", () => {
+      entry.note = note.value;
+      try {
+        localStorage.setItem(key, JSON.stringify(entries));
+        status.textContent = "保存しました";
+      } catch (e) {
+        status.textContent = "保存できませんでした";
+      }
+    });
+
+    row.append(label, note, status);
+  });
+};
+
 render();
 </script></body></html>
