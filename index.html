@@ -2,4 +2,42 @@
 const $=id=>document.getElementById(id),key='myshift-voice-prototype-v1';let entries=[];try{entries=JSON.parse(localStorage.getItem(key)||'[]')}catch{};const pad=n=>String(n).padStart(2,'0');const localDate=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;const addDay=(s,n)=>{let [y,m,d]=s.split('-').map(Number),x=new Date(y,m-1,d+n);return localDate(x)};const today=new Date();function parseSpeech(raw){let s=raw.replace(/\s/g,'').replace(/[、。]/g,'').replace(/午前零時/g,'0時').replace(/深夜0時/g,'0時').replace(/午後([0-9０-９]+)時/g,(_,n)=>`${Number(normalize(n))+12}時`);s=normalize(s);let md=s.match(/(?:(\d{4})年)?(\d{1,2})月(\d{1,2})日/);if(!md)return null;let year=md[1]?+md[1]:today.getFullYear(),month=+md[2],day=+md[3];if(month<1||month>12||day<1||day>31)return null;let dt=new Date(year,month-1,day);if(dt.getMonth()+1!==month||dt.getDate()!==day)return null;let times=[...s.matchAll(/(\d{1,2})(?:時|:)(?:(\d{1,2})分?)?/g)].map(m=>({h:+m[1],m:+(m[2]||0),index:m.index}));if(times.length<2)return null;let a=times[0],b=times[1];if(a.h>24||b.h>24||a.m>59||b.m>59||a.h===24&&a.m||b.h===24&&b.m)return null;let workDate=localDate(dt),startDate=addDay(workDate,a.h===24?1:0);let startHour=a.h%24;let endDate=startDate;let endHour=b.h%24;let tail=s.slice(times[0].index+1);if(/翌朝|翌日|次の日/.test(tail)||b.h===24||endHour*60+b.m<=startHour*60+a.m)endDate=addDay(startDate,1);if(a.h<5 && a.h!==24 && !/翌朝|翌日/.test(s.slice(0,times[0].index))){/* User's explicit date is the work-date label; clock time is on following civil date. */startDate=addDay(workDate,1);endDate=startDate;if(b.h===24||endHour*60+b.m<=startHour*60+a.m)endDate=addDay(startDate,1)}return {date:workDate,start:`${pad(startHour)}:${pad(a.m)}`,end:`${pad(endHour)}:${pad(b.m)}`,endDate};}
 function normalize(s){return s.replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-65248)).replace(/([一二三四五六七八九十]+)(?=月|日|時|分)/g,x=>{const n={'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};if(x==='十')return '10';if(x.includes('十')){let [a,b]=x.split('十');return String((a?n[a]:1)*10+(b?n[b]:0))}return String(n[x]||x)})}
 function showForm(v){$('form').classList.remove('hidden');$('date').value=v.date;$('start').value=v.start;$('end').value=v.end;$('endDate').value=v.endDate;preview()}function preview(){$('preview').textContent=`${$('date').value}（勤務日） ${$('start').value} ～ ${$('endDate').value} ${$('end').value}`};['date','start','end','endDate'].forEach(id=>$(id).addEventListener('input',preview));$('manual').onclick=()=>{let d=localDate(today);showForm({date:d,start:'22:00',end:'09:00',endDate:addDay(d,1)});$('status').textContent='日時を入力して確認してください。'};$('cancel').onclick=()=>{$('form').classList.add('hidden')};$('save').onclick=()=>{let date=$('date').value,start=$('start').value,end=$('end').value,endDate=$('endDate').value;if(!date||!start||!end||!endDate){alert('すべて入力してください');return}let startDate=(+start.slice(0,2)<5)?addDay(date,1):date;if(new Date(`${endDate}T${end}:00`)<=new Date(`${startDate}T${start}:00`)){alert('終了日時を確認してください');return}entries.push({date,start,end,endDate,id:Date.now()+Math.random()});localStorage.setItem(key,JSON.stringify(entries));render();$('form').classList.add('hidden');$('status').textContent='試作版に保存しました。公開中のMY SHIFTには反映されません。'};function render(){$('items').replaceChildren();if(!entries.length){$('items').textContent='まだ予定はありません。';return}entries.slice().sort((a,b)=>a.date.localeCompare(b.date)).forEach(e=>{let d=document.createElement('div');d.className='item';let t=document.createElement('div');t.textContent=`${e.date}　${e.start} ～ ${e.endDate} ${e.end}`;let b=document.createElement('button');b.className='danger';b.textContent='削除';b.style.marginTop='8px';b.onclick=()=>{if(confirm('この予定を削除しますか？')){entries=entries.filter(x=>x.id!==e.id);localStorage.setItem(key,JSON.stringify(entries));render()}};d.append(t,b);$('items').append(d)})}render();let SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;$('mic').onclick=()=>{$('status').textContent='マイクボタンを押しました。音声認識を確認しています…';if(!SpeechRecognition){$('status').textContent='この環境では音声認識を利用できません。Safariなど対応ブラウザで試すか、手入力してください。';return}let r=new SpeechRecognition();r.lang='ja-JP';r.interimResults=false;r.maxAlternatives=1;$('status').textContent='聞き取り中… 出勤予定を話してください';$('mic').disabled=true;r.onresult=e=>{let t=e.results[0][0].transcript;$('recognized').textContent=`認識結果：${t}`;let v=parseSpeech(t);if(v){showForm(v);$('status').textContent='内容を確認して保存してください。'}else{$('status').textContent='日時を読み取れませんでした。もう一度話すか、手入力してください。'}};r.onerror=e=>{$('status').textContent=`音声認識エラー（${e.error}）。マイクの許可やブラウザを確認してください。`};r.onend=()=>{$('mic').disabled=false};try{r.start()}catch(e){$('mic').disabled=false;$('status').textContent='音声認識を開始できませんでした。'}};
+
+const originalRender = render;
+
+render = function () {
+  originalRender();
+
+  const rows = document.querySelectorAll("#items .item");
+  const sorted = entries.slice().sort((a, b) =>
+    a.date.localeCompare(b.date)
+  );
+
+  rows.forEach((row, i) => {
+    const entry = sorted[i];
+    if (!entry) return;
+
+    const label = document.createElement("label");
+    label.textContent = "備考";
+    label.style.marginTop = "12px";
+
+    const note = document.createElement("textarea");
+    note.className = "field";
+    note.rows = 3;
+    note.placeholder = "備考を入力";
+    note.value = entry.note || "";
+
+    const status = document.createElement("small");
+
+    note.addEventListener("input", () => {
+      entry.note = note.value;
+      localStorage.setItem(key, JSON.stringify(entries));
+      status.textContent = "保存しました";
+    });
+
+    row.append(label, note, status);
+  });
+};
+
+render();
 </script></body></html>
